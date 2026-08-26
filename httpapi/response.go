@@ -40,6 +40,8 @@ func WriteErr(w http.ResponseWriter, err error) {
 }
 
 // mapError 将业务错误映射为 HTTP 状态码与可读消息。
+// 业务规则拦截（发放三要素不满足、回收闭环不满足、灭菌器维护中）统一返回 422，
+// 并在 message 中携带具体拦截原因，供前端与日志直接展示，避免按系统错误处理。
 func mapError(err error) (int, string) {
 	switch {
 	case errors.Is(err, domain.ErrNotFound):
@@ -52,6 +54,11 @@ func mapError(err error) (int, string) {
 		return http.StatusConflict, err.Error()
 	case errors.Is(err, domain.ErrConflict):
 		return http.StatusConflict, err.Error()
+	case errors.Is(err, domain.ErrIssueBlocked),
+		errors.Is(err, domain.ErrCollectBlocked),
+		errors.Is(err, domain.ErrSterilizerUnavailable):
+		// BlockedError.Error() 返回具体拦截原因，直接透出给调用方。
+		return http.StatusUnprocessableEntity, err.Error()
 	default:
 		return http.StatusInternalServerError, "服务器内部错误"
 	}

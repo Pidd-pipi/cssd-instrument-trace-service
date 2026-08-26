@@ -11,7 +11,8 @@ import (
 
 // IssueGuard 发放前置校验守卫中间件：
 // 在进入发放 handler 之前快速校验「已灭菌 + 未过期 + 批次参数合格」，
-// 不满足则直接返回 422，避免无效发放请求进入业务层。
+// 不满足则直接返回 422 并在 message 中携带拦截原因，避免无效发放请求进入业务层，
+// 也避免把业务拦截按系统错误（500）处理。
 func IssueGuard(svc *service.Services) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -22,11 +23,13 @@ func IssueGuard(svc *service.Services) func(http.Handler) http.Handler {
 			}
 			pack, err := svc.Packs.Get(id)
 			if err != nil {
-				guardJSON(w, http.StatusInternalServerError, "资源不存在")
+				// 资源不存在按 404 处理，避免掩盖为系统错误。
+				guardJSON(w, http.StatusNotFound, domain.ErrNotFound.Error())
 				return
 			}
 			if ok, reason := pack.CanBeIssued(time.Now()); !ok {
-				guardJSON(w, http.StatusInternalServerError, reason)
+				// 业务规则拦截统一 422，原因直接透出。
+				guardJSON(w, http.StatusUnprocessableEntity, reason)
 				return
 			}
 			next.ServeHTTP(w, r)
@@ -41,6 +44,5 @@ func guardJSON(w http.ResponseWriter, status int, message string) {
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"code":    status,
 		"message": message,
-		"data":    domain.ErrIssueBlocked.Error(),
 	})
 }

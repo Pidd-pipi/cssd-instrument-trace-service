@@ -72,7 +72,7 @@ func (h *IssueHandler) Collect(w http.ResponseWriter, r *http.Request) {
 	actor := service.Actor{Operator: req.Operator, IP: clientIP(r)}
 	record, err := h.svc.Issues.Collect(id, collector, actor)
 	if err != nil {
-		Fail(w, http.StatusInternalServerError, http.StatusInternalServerError, "服务器内部错误")
+		WriteErr(w, err)
 		return
 	}
 	OK(w, record)
