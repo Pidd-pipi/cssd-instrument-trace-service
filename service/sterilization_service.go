@@ -30,7 +30,7 @@ func (s *SterilizationService) CreateBatch(in domain.CreateBatchInput, actor Act
 	}
 	sterilizer, err := s.store.GetSterilizer(in.SterilizerID)
 	if err != nil {
-		return nil, fmt.Errorf("%v: %v", domain.ErrInvalidParam, err)
+		return nil, fmt.Errorf("%w: %v", domain.ErrInvalidParam, err)
 	}
 	if !sterilizer.IsAvailable() {
 		return nil, fmt.Errorf("%w: %s 处于维护中", domain.ErrSterilizerUnavailable, sterilizer.Name)
@@ -41,7 +41,7 @@ func (s *SterilizationService) CreateBatch(in domain.CreateBatchInput, actor Act
 			return nil, fmt.Errorf("%w: 器械包 %s 不存在", domain.ErrInvalidParam, pid)
 		}
 		if pack.Stage != domain.StageWashed {
-			return nil, fmt.Errorf("%v: 器械包 %s 当前环节为 %s，仅「已清洗」器械包可装载灭菌", domain.ErrInvalidTransition, pack.Barcode, pack.Stage)
+			return nil, fmt.Errorf("%w: 器械包 %s 当前环节为 %s，仅「已清洗」器械包可装载灭菌", domain.ErrInvalidTransition, pack.Barcode, pack.Stage)
 		}
 	}
 	batchNo := domain.NewBatchNo(time.Now(), s.store.CountBatches()+1)
@@ -87,6 +87,10 @@ func (s *SterilizationService) CreateBatch(in domain.CreateBatchInput, actor Act
 // CompleteBatch 完成灭菌：依据参数下限判定合格/失败并联动更新批次内器械包。
 //   - 合格：器械包推进到「已灭菌」并按包类型计算有效期；
 //   - 失败：批次内器械包全部拦截，退回「已清洗」等待重新灭菌。
+//
+// 批次完整性校验在写入任何器械包前完成：批次内每个器械包必须存在且处于
+// 「灭菌中」，否则整批判定中止并返回状态冲突，既不更新器械包也不完结批次，
+// 避免出现「前几包已灭菌、批次卡在待判定、缺失包被静默跳过」的中间态。
 func (s *SterilizationService) CompleteBatch(batchID string, actor Actor) (*domain.SterilizationBatch, error) {
 	batch, err := s.store.GetBatch(batchID)
 	if err != nil {
@@ -95,12 +99,24 @@ func (s *SterilizationService) CompleteBatch(batchID string, actor Actor) (*doma
 	if batch.Status == domain.BatchCompleted {
 		return nil, fmt.Errorf("%w: 批次 %s 已完成参数判定", domain.ErrConflict, batch.BatchNo)
 	}
+	// 完成前置校验：逐包核对存在性与环节，任一不满足整批拒绝，避免部分写入与静默跳过。
+	for _, pid := range batch.PackIDs {
+		pack, err := s.store.GetPack(pid)
+		if err != nil {
+			return nil, fmt.Errorf("%w: 批次 %s 内器械包 %s 不存在，无法完成判定", domain.ErrConflict, batch.BatchNo, pid)
+		}
+		if pack.Stage != domain.StageSterilizing {
+			return nil, fmt.Errorf("%w: 器械包 %s 当前环节为 %s，不在灭菌中，无法完成批次 %s 判定",
+				domain.ErrConflict, pack.Barcode, pack.Stage, batch.BatchNo)
+		}
+	}
 	result, reasons := batch.JudgeParams(s.rules.SterilizationLimits)
 	now := time.Now()
 	for _, pid := range batch.PackIDs {
 		pack, err := s.store.GetPack(pid)
 		if err != nil {
-			continue
+			// 前置校验已确保存在，这里仅作为并发兜底；命中即整批中止。
+			return nil, fmt.Errorf("%w: 批次 %s 内器械包 %s 不存在，无法完成判定", domain.ErrConflict, batch.BatchNo, pid)
 		}
 		from := pack.Stage
 		var params map[string]any

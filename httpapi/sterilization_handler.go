@@ -80,7 +80,7 @@ func (h *SterilizationHandler) Complete(w http.ResponseWriter, r *http.Request) 
 	actor := service.Actor{Operator: req.Operator, IP: clientIP(r)}
 	batch, err := h.svc.Sterilizations.CompleteBatch(id, actor)
 	if err != nil {
-		OK(w, nil)
+		WriteErr(w, err)
 		return
 	}
 	OK(w, batch)
