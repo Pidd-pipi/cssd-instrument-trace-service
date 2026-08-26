@@ -19,9 +19,10 @@ var stageTransitions = map[PackStage]PackStage{
 
 // manualCycleTransitions 允许通过通用「环节流转」接口手动推进的迁移。
 // 以下迁移必须走专用接口，禁止手动流转：
-//   - 清洗中→灭菌中 / 灭菌中→已灭菌：由灭菌批次创建/完结驱动；
+//   - 已清洗→灭菌中 / 灭菌中→已灭菌：由灭菌批次创建/完结驱动；
 //   - 已灭菌→已发放：必须经发放接口完成三项校验；
 //   - 使用中→待回收：必须经回收接口闭环发放记录。
+// 注意：StageExpired→StageWashing 允许手动流转，过期包需重新清洗灭菌。
 var manualCycleTransitions = map[PackStage]PackStage{
 	StageToCollect: StageCollected, // 待回收→已回收
 	StageCollected: StageWashing,   // 已回收→清洗中
@@ -55,10 +56,8 @@ func NextStage(s PackStage) (PackStage, bool) {
 }
 
 // ValidateTransition 校验 from→to 是否为状态机允许的相邻迁移。
+// 过期包（expired）允许重新进入清洗流程（expired→washing）。
 func ValidateTransition(from, to PackStage) error {
-	if from == StageExpired && to == StageWashing {
-		return fmt.Errorf("%w: 环节 %s 不能重新进入清洗流程", ErrInvalidTransition, from)
-	}
 	expected, ok := stageTransitions[from]
 	if !ok {
 		return fmt.Errorf("%w: 当前环节 %s 无合法后继", ErrInvalidTransition, from)
@@ -70,19 +69,9 @@ func ValidateTransition(from, to PackStage) error {
 }
 
 // IsManualCycle 判断 from→to 是否允许通过通用环节流转接口手动推进。
+// 已清洗→灭菌中、灭菌中→已灭菌、已灭菌→已发放、使用中→待回收
+// 必须走专用接口（灭菌批次创建/完结、发放接口、回收接口），禁止手动流转。
 func IsManualCycle(from, to PackStage) bool {
 	expected, ok := manualCycleTransitions[from]
-	if ok && expected == to {
-		return true
-	}
-
-	if from == StageWashed && to == StageSterilizing {
-		return true
-	}
-
-	if from == StageSterilizing && to == StageSterilized {
-		return true
-	}
-
-	return false
+	return ok && expected == to
 }

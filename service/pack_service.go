@@ -47,6 +47,8 @@ func (s *PackService) Register(in domain.RegisterPackInput, actor Actor) (*domai
 }
 
 // Cycle 通用环节流转：仅允许状态机中的手动迁移，跳步直接拒绝。
+// 已灭菌→已发放、使用中→待回收必须分别走发放/回收专用接口，
+// 在通用流转里推进这两步会绕过发放校验与回收闭环，因此一律拒绝。
 func (s *PackService) Cycle(packID string, target domain.PackStage, deviceID, note string, actor Actor) (*domain.InstrumentPack, error) {
 	if !domain.IsValidStage(target) {
 		return nil, fmt.Errorf("%w: 未知环节 %q", domain.ErrInvalidParam, target)
@@ -56,11 +58,7 @@ func (s *PackService) Cycle(packID string, target domain.PackStage, deviceID, no
 		return nil, err
 	}
 	from := pack.Stage
-	if from == domain.StageSterilized && target == domain.StageIssued {
-		// 手动发放放行
-	} else if from == domain.StageInUse && target == domain.StageToCollect {
-		// 手动回收放行
-	} else if !domain.IsManualCycle(from, target) {
+	if !domain.IsManualCycle(from, target) {
 		return nil, fmt.Errorf("%w: 环节 %s 不能通过通用流转推进到 %s", domain.ErrInvalidTransition, from, target)
 	}
 	if err := domain.ValidateTransition(from, target); err != nil {
@@ -80,7 +78,7 @@ func (s *PackService) Cycle(packID string, target domain.PackStage, deviceID, no
 	if note != "" {
 		params["note"] = note
 	}
-	rec := domain.NewCycleRecord(pack, target, target, actor.Operator, deviceID, note, params)
+	rec := domain.NewCycleRecord(pack, from, target, actor.Operator, deviceID, note, params)
 	if err := s.store.SaveCycle(rec); err != nil {
 		return nil, err
 	}
