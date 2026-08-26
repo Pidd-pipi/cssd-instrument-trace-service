@@ -18,6 +18,8 @@ var (
 	ErrIssueBlocked = errors.New("发放被拦截")
 	// ErrCollectBlocked 回收被拦截（非使用中或缺少发放记录）。
 	ErrCollectBlocked = errors.New("回收被拦截")
+	// ErrIssueLost 发放记录已进入「丢失待查」终态，不可再按正常归还回收。
+	ErrIssueLost = errors.New("发放记录已丢失待查")
 	// ErrConflict 数据状态冲突。
 	ErrConflict = errors.New("状态冲突")
 )

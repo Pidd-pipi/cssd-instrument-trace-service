@@ -42,12 +42,30 @@ func (s *Store) GetIssue(id string) (*domain.IssueRecord, error) {
 	return out, nil
 }
 
-// GetOpenIssueByPack 返回器械包当前未回收的发放记录。
+// GetOpenIssueByPack 返回器械包当前活跃开放（可回收闭环）的发放记录。
+// 仅匹配 Status==IssueOpen：丢失待查(IssueLost)是终态，不视为开放，
+// 既不会进入未回收列表、也不会被回收接口当成正常归还覆盖。
 func (s *Store) GetOpenIssueByPack(packID string) *domain.IssueRecord {
 	var out *domain.IssueRecord
 	s.view(func() {
 		for _, r := range s.issues {
-			if r.PackID == packID && r.CollectedAt == nil {
+			if r.PackID == packID && r.Status == domain.IssueOpen {
+				cp := *r
+				out = &cp
+				return
+			}
+		}
+	})
+	return out
+}
+
+// GetUnclosedIssueByPack 返回器械包当前尚未闭环的发放记录（开放 或 丢失待查）。
+// 丢失包未结案，禁止重复发放，故未闭环包含丢失态。
+func (s *Store) GetUnclosedIssueByPack(packID string) *domain.IssueRecord {
+	var out *domain.IssueRecord
+	s.view(func() {
+		for _, r := range s.issues {
+			if r.PackID == packID && r.Status != domain.IssueReturned {
 				cp := *r
 				out = &cp
 				return
@@ -103,17 +121,15 @@ func (s *Store) UpdateIssue(id string, fn func(r *domain.IssueRecord) error) err
 	})
 }
 
-// ListOpenIssuesOlderThan 返回发放时间早于 cut 且尚未回收的发放记录。
+// ListOpenIssuesOlderThan 返回发放时间早于 cut 且仍处于活跃开放态的发放记录。
+// 仅匹配 Status==IssueOpen：丢失待查(IssueLost)记录已进入终态，不再重复扫描，
+// 保证丢失扫描幂等——同一条记录不会被反复标记，丢失清单也不会重复出现。
 func (s *Store) ListOpenIssuesOlderThan(cut time.Time) []*domain.IssueRecord {
 	out := make([]*domain.IssueRecord, 0)
 	s.view(func() {
 		for _, r := range s.issues {
-			if r.CollectedAt == nil && r.IssuedAt.Before(cut) {
+			if r.Status == domain.IssueOpen && r.IssuedAt.Before(cut) {
 				cp := *r
-				if r.CollectedAt != nil {
-					t := *r.CollectedAt
-					cp.CollectedAt = &t
-				}
 				out = append(out, &cp)
 			}
 		}

@@ -31,7 +31,11 @@ func (s *IssueService) Issue(packID string, in domain.IssueInput, actor Actor) (
 		return nil, err
 	}
 	now := time.Now()
-	if open := s.store.GetOpenIssueByPack(packID); open != nil {
+	if open := s.store.GetUnclosedIssueByPack(packID); open != nil {
+		// 已有未闭环记录：活跃开放（重复发放）或丢失待查（包未找回，禁止再发）。
+		if open.Status == domain.IssueLost {
+			return nil, fmt.Errorf("%w: 器械包 %s 上一笔发放已丢失待查，未结案前禁止重复发放", domain.ErrConflict, pack.Barcode)
+		}
 		return nil, fmt.Errorf("%w: 器械包 %s 已有未回收的发放记录", domain.ErrConflict, pack.Barcode)
 	}
 	if ok, reason := pack.CanBeIssued(now); !ok {
@@ -71,7 +75,9 @@ func (s *IssueService) Issue(packID string, in domain.IssueInput, actor Actor) (
 	return s.store.GetIssue(issue.ID)
 }
 
-// Collect 回收器械包：必须处于「使用中」且有未回收发放记录，按条码闭环。
+// Collect 回收器械包：必须处于「使用中」且有活跃开放的发放记录，按条码闭环。
+// 丢失待查(IssueLost)是终态：器械包尚未找回，不能当作正常归还回收，否则丢失
+// 标记会被覆盖、统计把这笔又记成已闭环、丢失与开放列表还会重复出现同一条。
 func (s *IssueService) Collect(packID, collector string, actor Actor) (*domain.IssueRecord, error) {
 	pack, err := s.store.GetPack(packID)
 	if err != nil {
@@ -84,6 +90,12 @@ func (s *IssueService) Collect(packID, collector string, actor Actor) (*domain.I
 	}
 	open := s.store.GetOpenIssueByPack(packID)
 	if open == nil {
+		// 区分两种异常：仅有丢失记录（不可回收，应走「找回/结案」流程），
+		// 还是根本没有发放记录。
+		if unclosed := s.store.GetUnclosedIssueByPack(packID); unclosed != nil && unclosed.Status == domain.IssueLost {
+			return nil, &BlockedError{Kind: domain.ErrCollectBlocked,
+				Reason: fmt.Sprintf("器械包 %s 的发放记录已丢失待查，请先找回并结案后再闭环，不可直接回收", pack.Barcode)}
+		}
 		return nil, &BlockedError{Kind: domain.ErrCollectBlocked,
 			Reason: fmt.Sprintf("器械包 %s 没有未回收的发放记录，无法闭环回收", pack.Barcode)}
 	}
@@ -98,8 +110,8 @@ func (s *IssueService) Collect(packID, collector string, actor Actor) (*domain.I
 		return nil, err
 	}
 	if err := s.store.UpdateIssue(open.ID, func(r *domain.IssueRecord) error {
-		r.MarkReturned(collector, now)
-		return nil
+		// MarkReturned 对丢失记录会拒绝回流（终态保护），双保险防止覆盖。
+		return r.MarkReturned(collector, now)
 	}); err != nil {
 		return nil, err
 	}
@@ -132,7 +144,9 @@ type LostEntry struct {
 	OverdueHours float64                `json:"overdueHours"`
 }
 
-// ScanLost 扫描发放超时（默认 24 小时）未回收的记录，标记为「丢失待查」。
+// ScanLost 扫描发放超时（默认 24 小时）仍未回收的活跃开放记录，标记为「丢失待查」。
+// ListOpenIssuesOlderThan 仅返回 IssueOpen 记录，故已丢失记录不会再次进入扫描，
+// 丢失标记幂等：同一条记录不会被反复刷写，丢失清单也不会重复出现。
 func (s *IssueService) ScanLost(now time.Time) []LostEntry {
 	cut := now.Add(-s.rules.LostTimeout())
 	records := s.store.ListOpenIssuesOlderThan(cut)
@@ -142,13 +156,12 @@ func (s *IssueService) ScanLost(now time.Time) []LostEntry {
 		if err != nil {
 			continue
 		}
-		if r.Status == domain.IssueOpen {
-			_ = s.store.UpdateIssue(r.ID, func(rec *domain.IssueRecord) error {
-				rec.MarkLost()
-				return nil
-			})
-			r.Status = domain.IssueLost
-		}
+		// MarkLost 仅对 IssueOpen 生效（终态保护），此处记录必为开放态。
+		_ = s.store.UpdateIssue(r.ID, func(rec *domain.IssueRecord) error {
+			rec.MarkLost()
+			return nil
+		})
+		r.Status = domain.IssueLost
 		entries = append(entries, LostEntry{
 			Issue:        r,
 			Pack:         pack,
@@ -159,9 +172,10 @@ func (s *IssueService) ScanLost(now time.Time) []LostEntry {
 }
 
 // LostList 返回丢失待查清单。
+// 先扫描将新超时记录置为丢失（副作用与扫描任务一致），再补齐历史丢失记录，
+// 以 ID 去重，确保同一笔记录不会同时出现两次。
 func (s *IssueService) LostList(now time.Time) []LostEntry {
 	entries := s.ScanLost(now)
-	// 补充仍为「丢失」状态但可能刚被标记的记录（避免依赖 ScanLost 副作用）。
 	seen := make(map[string]bool, len(entries))
 	for _, e := range entries {
 		seen[e.Issue.ID] = true

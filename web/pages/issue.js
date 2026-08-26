@@ -20,6 +20,12 @@ CSSD.pages.issue = function (container) {
       ]);
       openIssues = o || [];
       lost = l || [];
+      // 丢失清单（/api/lost）内部会触发一次丢失扫描，可能把某条记录由
+      // issued→lost。两条请求是并发的，listIssues 可能在标记前读到该记录，
+      // 造成同一条同时落在「未回收发放记录」与「丢失待查」两列。
+      // 以丢失清单为准去重：已进入丢失态的记录不再出现在未回收列表。
+      const lostIds = new Set(lost.map((e) => e.issue && e.issue.id));
+      openIssues = openIssues.filter((r) => !lostIds.has(r.id));
     } catch (e) {
       CSSD.toast.error('加载数据失败: ' + e.message);
     }
