@@ -17,14 +17,16 @@ type PackFilter struct {
 }
 
 // SavePack 新增或更新器械包并持久化。
+// 存入仓储的是入参的拷贝，避免外部继续修改入参指针而串进仓储内部。
 func (s *Store) SavePack(p *domain.InstrumentPack) error {
 	return s.mutate(func() error {
 		old, existed := s.packs[p.ID]
 		if existed && old.Barcode != p.Barcode {
 			delete(s.packBarcodeIndex, old.Barcode)
 		}
-		s.packs[p.ID] = p
-		s.packBarcodeIndex[p.Barcode] = p.ID
+		cp := p.Copy()
+		s.packs[p.ID] = cp
+		s.packBarcodeIndex[cp.Barcode] = cp.ID
 		return nil
 	})
 }

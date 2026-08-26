@@ -16,24 +16,21 @@ type IssueFilter struct {
 }
 
 // SaveIssue 新增或更新发放记录并持久化。
+// 存入仓储的是入参的拷贝，避免外部继续修改入参指针而串进仓储内部。
 func (s *Store) SaveIssue(r *domain.IssueRecord) error {
 	return s.mutate(func() error {
-		s.issues[r.ID] = r
+		s.issues[r.ID] = r.Copy()
 		return nil
 	})
 }
 
 // GetIssue 按 ID 获取发放记录。
+// 返回仓储内对象的深拷贝，调用方修改不会影响仓储数据。
 func (s *Store) GetIssue(id string) (*domain.IssueRecord, error) {
 	var out *domain.IssueRecord
 	s.view(func() {
 		if r, ok := s.issues[id]; ok {
-			cp := *r
-			if r.CollectedAt != nil {
-				t := *r.CollectedAt
-				cp.CollectedAt = &t
-			}
-			out = &cp
+			out = r.Copy()
 		}
 	})
 	if out == nil {
@@ -43,13 +40,13 @@ func (s *Store) GetIssue(id string) (*domain.IssueRecord, error) {
 }
 
 // GetOpenIssueByPack 返回器械包当前未回收的发放记录。
+// 返回仓储内对象的深拷贝，调用方修改不会影响仓储数据。
 func (s *Store) GetOpenIssueByPack(packID string) *domain.IssueRecord {
 	var out *domain.IssueRecord
 	s.view(func() {
 		for _, r := range s.issues {
 			if r.PackID == packID && r.IsOpen() {
-				cp := *r
-				out = &cp
+				out = r.Copy()
 				return
 			}
 		}
@@ -58,6 +55,7 @@ func (s *Store) GetOpenIssueByPack(packID string) *domain.IssueRecord {
 }
 
 // ListIssues 按过滤条件查询发放记录，按发放时间倒序。
+// 每条记录均为仓储内对象的深拷贝，调用方修改不会影响仓储数据。
 func (s *Store) ListIssues(f IssueFilter) []*domain.IssueRecord {
 	out := make([]*domain.IssueRecord, 0)
 	s.view(func() {
@@ -68,12 +66,7 @@ func (s *Store) ListIssues(f IssueFilter) []*domain.IssueRecord {
 			if f.PackID != "" && r.PackID != f.PackID {
 				continue
 			}
-			cp := *r
-			if r.CollectedAt != nil {
-				t := *r.CollectedAt
-				cp.CollectedAt = &t
-			}
-			out = append(out, &cp)
+			out = append(out, r.Copy())
 		}
 	})
 	sort.Slice(out, func(i, j int) bool {
@@ -90,31 +83,30 @@ func (s *Store) ListIssues(f IssueFilter) []*domain.IssueRecord {
 }
 
 // UpdateIssue 在写锁内按 ID 更新发放记录。
+// fn 接收副本，返回错误则丢弃改动；成功后将副本写回仓储。
 func (s *Store) UpdateIssue(id string, fn func(r *domain.IssueRecord) error) error {
 	return s.mutate(func() error {
 		r, ok := s.issues[id]
 		if !ok {
 			return domain.ErrNotFound
 		}
-		if err := fn(r); err != nil {
+		cp := r.Copy()
+		if err := fn(cp); err != nil {
 			return err
 		}
+		s.issues[id] = cp
 		return nil
 	})
 }
 
 // ListOpenIssuesOlderThan 返回发放时间早于 cut 且尚未回收的发放记录。
+// 每条记录均为仓储内对象的深拷贝，调用方修改不会影响仓储数据。
 func (s *Store) ListOpenIssuesOlderThan(cut time.Time) []*domain.IssueRecord {
 	out := make([]*domain.IssueRecord, 0)
 	s.view(func() {
 		for _, r := range s.issues {
 			if r.IsOpen() && r.IssuedAt.Before(cut) {
-				cp := *r
-				if r.CollectedAt != nil {
-					t := *r.CollectedAt
-					cp.CollectedAt = &t
-				}
-				out = append(out, &cp)
+				out = append(out, r.Copy())
 			}
 		}
 	})

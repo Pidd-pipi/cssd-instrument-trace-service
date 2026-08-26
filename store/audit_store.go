@@ -7,9 +7,10 @@ import (
 )
 
 // SaveAudit 新增审计日志并持久化。
+// 存入仓储的是入参的拷贝，避免外部继续修改入参指针而串进仓储内部。
 func (s *Store) SaveAudit(a *domain.AuditLog) error {
 	return s.mutate(func() error {
-		s.audits[a.ID] = a
+		s.audits[a.ID] = a.Copy()
 		return nil
 	})
 }
@@ -20,12 +21,12 @@ func (s *Store) ListAudits(limit int) []*domain.AuditLog {
 }
 
 // ListAuditsPage 返回审计日志分页结果，按时间倒序。
+// 每条记录均为仓储内对象的深拷贝，调用方修改不会影响仓储数据。
 func (s *Store) ListAuditsPage(limit, offset int) []*domain.AuditLog {
 	out := make([]*domain.AuditLog, 0)
 	s.view(func() {
 		for _, a := range s.audits {
-			cp := *a
-			out = append(out, &cp)
+			out = append(out, a.Copy())
 		}
 	})
 	sort.Slice(out, func(i, j int) bool {

@@ -59,3 +59,12 @@ func NewSterilizer(in CreateSterilizerInput) *Sterilizer {
 		UpdatedAt: now,
 	}
 }
+
+// Copy 返回灭菌器的深拷贝，避免调用方意外修改仓储内对象。
+func (s *Sterilizer) Copy() *Sterilizer {
+	if s == nil {
+		return nil
+	}
+	cp := *s
+	return &cp
+}

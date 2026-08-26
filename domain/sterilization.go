@@ -62,6 +62,7 @@ func (in CreateBatchInput) Validate() error {
 }
 
 // NewBatch 依据入参构建待判定的灭菌批次。
+// 入参切片拷贝后归入批次，避免外部对入参切片的后续修改串进批次内部。
 func NewBatch(in CreateBatchInput, sterilizerName string, batchNo string) *SterilizationBatch {
 	now := time.Now()
 	return &SterilizationBatch{
@@ -75,9 +76,24 @@ func NewBatch(in CreateBatchInput, sterilizerName string, batchNo string) *Steri
 		PressureKPa:    in.PressureKPa,
 		Status:         BatchPending,
 		Result:         "",
-		PackIDs:        in.PackIDs,
+		PackIDs:        append([]string(nil), in.PackIDs...),
 		CreatedAt:      now,
 	}
+}
+
+// Copy 返回灭菌批次的深拷贝，避免调用方意外修改仓储内对象。
+func (b *SterilizationBatch) Copy() *SterilizationBatch {
+	if b == nil {
+		return nil
+	}
+	cp := *b
+	cp.PackIDs = append([]string(nil), b.PackIDs...)
+	cp.FailReasons = append([]string(nil), b.FailReasons...)
+	if b.CompletedAt != nil {
+		ts := *b.CompletedAt
+		cp.CompletedAt = &ts
+	}
+	return &cp
 }
 
 // JudgeParams 依据规则判定灭菌参数是否合格，返回判定结果与不合格原因。

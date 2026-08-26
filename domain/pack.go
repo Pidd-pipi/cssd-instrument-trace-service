@@ -46,6 +46,7 @@ func (in RegisterPackInput) Validate() error {
 }
 
 // NewPack 依据登记入参构建处于「待回收」初始环节的器械包。
+// 入参器械清单拷贝后归入器械包，避免外部对入参切片的后续修改串进器械包内部。
 func NewPack(in RegisterPackInput) *InstrumentPack {
 	now := time.Now()
 	return &InstrumentPack{
@@ -53,7 +54,7 @@ func NewPack(in RegisterPackInput) *InstrumentPack {
 		Barcode:     strings.TrimSpace(in.Barcode),
 		Name:        strings.TrimSpace(in.Name),
 		PackType:    in.PackType,
-		Instruments: in.Instruments,
+		Instruments: append([]string(nil), in.Instruments...),
 		Stage:       StageToCollect,
 		CreatedAt:   now,
 		UpdatedAt:   now,

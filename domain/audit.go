@@ -40,3 +40,18 @@ func NewAuditLog(action, operator, targetType, targetID, ip string, detail map[s
 		CreatedAt:  time.Now(),
 	}
 }
+
+// Copy 返回审计日志的深拷贝，避免调用方意外修改仓储内对象。
+func (a *AuditLog) Copy() *AuditLog {
+	if a == nil {
+		return nil
+	}
+	cp := *a
+	if a.Detail != nil {
+		cp.Detail = make(map[string]any, len(a.Detail))
+		for k, v := range a.Detail {
+			cp.Detail[k] = v
+		}
+	}
+	return &cp
+}

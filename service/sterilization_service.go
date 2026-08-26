@@ -155,8 +155,15 @@ func (s *SterilizationService) CompleteBatch(batchID string, actor Actor) (*doma
 			return nil, err
 		}
 	}
-	batch.Complete(result, reasons, now)
-	if err := s.store.SaveBatch(batch); err != nil {
+	// 批次状态翻转必须在写锁内原子完成：状态校验与写入同处一个临界区，
+	// 避免两台客户端并发完成时都读到 pending 而重复联动器械包。
+	if err := s.store.UpdateBatch(batch.ID, func(b *domain.SterilizationBatch) error {
+		if b.Status == domain.BatchCompleted {
+			return fmt.Errorf("%w: 批次 %s 已完成参数判定", domain.ErrConflict, b.BatchNo)
+		}
+		b.Complete(result, reasons, now)
+		return nil
+	}); err != nil {
 		return nil, err
 	}
 	s.audit.Record(domain.ActionSterilizationComplete, actor, "batch", batch.ID, map[string]any{

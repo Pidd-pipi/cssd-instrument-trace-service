@@ -7,19 +7,21 @@ import (
 )
 
 // SaveBatch 新增或更新灭菌批次并持久化。
+// 存入仓储的是入参的拷贝，保证后续对入参指针的修改不会串进仓储内部。
 func (s *Store) SaveBatch(b *domain.SterilizationBatch) error {
 	return s.mutate(func() error {
-		s.batches[b.ID] = b
+		s.batches[b.ID] = b.Copy()
 		return nil
 	})
 }
 
 // GetBatch 按 ID 获取灭菌批次。
+// 返回仓储内对象的深拷贝，调用方修改不会影响仓储数据。
 func (s *Store) GetBatch(id string) (*domain.SterilizationBatch, error) {
 	var out *domain.SterilizationBatch
 	s.view(func() {
 		if b, ok := s.batches[id]; ok {
-			out = b
+			out = b.Copy()
 		}
 	})
 	if out == nil {
@@ -29,15 +31,18 @@ func (s *Store) GetBatch(id string) (*domain.SterilizationBatch, error) {
 }
 
 // UpdateBatch 在写锁内按 ID 更新批次。
+// fn 接收副本，返回错误则丢弃改动；成功后将副本写回仓储。
 func (s *Store) UpdateBatch(id string, fn func(b *domain.SterilizationBatch) error) error {
 	return s.mutate(func() error {
 		b, ok := s.batches[id]
 		if !ok {
 			return domain.ErrNotFound
 		}
-		if err := fn(b); err != nil {
+		cp := b.Copy()
+		if err := fn(cp); err != nil {
 			return err
 		}
+		s.batches[id] = cp
 		return nil
 	})
 }
@@ -48,11 +53,12 @@ func (s *Store) ListBatches(limit int) []*domain.SterilizationBatch {
 }
 
 // ListBatchesPage 返回灭菌批次分页结果，按创建时间倒序。
+// 每条记录均为仓储内对象的深拷贝，调用方修改不会影响仓储数据。
 func (s *Store) ListBatchesPage(limit, offset int) []*domain.SterilizationBatch {
 	out := make([]*domain.SterilizationBatch, 0)
 	s.view(func() {
 		for _, b := range s.batches {
-			out = append(out, b)
+			out = append(out, b.Copy())
 		}
 	})
 	sort.Slice(out, func(i, j int) bool {
