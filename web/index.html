@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>消毒供应中心器械追溯服务</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">🧪 CSSD 器械追溯服务</div>
+    <nav class="nav" id="nav">
+      <a href="/" data-route="/">工作台</a>
+      <a href="/packs" data-route="/packs">器械包管理</a>
+      <a href="/sterilization" data-route="/sterilization">灭菌管理</a>
+      <a href="/issue" data-route="/issue">发放回收</a>
+      <a href="/trace" data-route="/trace">追溯查询</a>
+    </nav>
+    <div class="health" id="health-indicator" title="服务健康状态">检测中...</div>
+  </header>
+  <main id="app" class="container">
+    <div class="loading">页面加载中...</div>
+  </main>
+  <div id="modal-root"></div>
+  <div id="toast-root"></div>
+
+  <script src="/constants.js"></script>
+  <script src="/api.js"></script>
+  <script src="/hooks/use-packs.js"></script>
+  <script src="/hooks/use-trace.js"></script>
+  <script src="/components/stage-badge.js"></script>
+  <script src="/components/cycle-timeline.js"></script>
+  <script src="/components/issue-form.js"></script>
+  <script src="/pages/dashboard.js"></script>
+  <script src="/pages/packs.js"></script>
+  <script src="/pages/sterilization.js"></script>
+  <script src="/pages/issue.js"></script>
+  <script src="/pages/trace.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
