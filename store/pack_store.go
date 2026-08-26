@@ -54,7 +54,7 @@ func (s *Store) GetPackByBarcode(barcode string) (*domain.InstrumentPack, error)
 		}
 	})
 	if out == nil {
-		return nil, nil
+		return nil, domain.ErrNotFound
 	}
 	return out, nil
 }

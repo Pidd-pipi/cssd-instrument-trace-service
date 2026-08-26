@@ -34,6 +34,9 @@ func (h *TraceHandler) PackTrace(w http.ResponseWriter, r *http.Request) {
 // TraceByBarcode 按条码追溯：GET /api/trace?barcode=。
 func (h *TraceHandler) TraceByBarcode(w http.ResponseWriter, r *http.Request) {
 	barcode := strings.TrimSpace(r.URL.Query().Get("barcode"))
+	if !requireString(w, "条码", barcode) {
+		return
+	}
 	view, err := h.svc.Trace.TraceByBarcode(barcode)
 	if err != nil {
 		WriteErr(w, err)

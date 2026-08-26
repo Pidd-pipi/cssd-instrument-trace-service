@@ -35,8 +35,8 @@ func (s *TraceService) PackTrace(packID string) (*PackTraceView, error) {
 		Issues: s.store.ListIssues(store.IssueFilter{PackID: packID}),
 	}
 	if pack.LastBatchID != "" {
-		batch, _ := s.store.GetBatch(pack.LastBatchID)
-		if batch.BatchNo != "" {
+		// 关联批次可能因数据不一致而查不到，忽略 ErrNotFound，绝不对 nil 批次取字段。
+		if batch, err := s.store.GetBatch(pack.LastBatchID); err == nil && batch != nil && batch.BatchNo != "" {
 			view.LastBatch = batch
 		}
 	}
@@ -48,6 +48,9 @@ func (s *TraceService) TraceByBarcode(barcode string) (*PackTraceView, error) {
 	pack, err := s.store.GetPackByBarcode(barcode)
 	if err != nil {
 		return nil, err
+	}
+	if pack == nil {
+		return nil, domain.ErrNotFound
 	}
 	return s.PackTrace(pack.ID)
 }
@@ -72,9 +75,12 @@ func (s *TraceService) BatchPacks(batchID string) (*BatchPacksView, error) {
 	}
 	view := &BatchPacksView{Batch: batch, Packs: make([]BatchPackView, 0, len(batch.PackIDs))}
 	for _, pid := range batch.PackIDs {
-		pack, _ := s.store.GetPack(pid)
+		// 批次内个别器械包可能因数据不一致而查不到，跳过缺失记录而不是对 nil 取字段。
+		pack, err := s.store.GetPack(pid)
+		if err != nil || pack == nil {
+			continue
+		}
 		item := BatchPackView{Pack: pack}
-		_ = pack.Stage
 		// 最新去向：取最近一条发放记录（含已回收闭环），比仅查未回收记录信息更完整。
 		if issues := s.store.ListIssues(store.IssueFilter{PackID: pid, Limit: 1}); len(issues) > 0 {
 			item.LatestIssue = issues[0]
