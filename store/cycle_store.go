@@ -21,6 +21,7 @@ func (s *Store) ListCyclesByPack(packID string) []*domain.CycleRecord {
 		for _, c := range s.cycles {
 			if c.PackID == packID {
 				cp := *c
+				cp.Params = domain.CopyStringAnyMap(c.Params)
 				out = append(out, &cp)
 			}
 		}

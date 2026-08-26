@@ -79,3 +79,14 @@ func (r *IssueRecord) MarkReturned(collector string, now time.Time) {
 func (r *IssueRecord) MarkLost() {
 	r.Status = IssueLost
 }
+
+// Copy 返回发放记录的深拷贝，指针字段与原对象隔离，
+// 避免调用方在副本上修改时写穿仓储内对象。
+func (r *IssueRecord) Copy() *IssueRecord {
+	cp := *r
+	if r.CollectedAt != nil {
+		t := *r.CollectedAt
+		cp.CollectedAt = &t
+	}
+	return &cp
+}

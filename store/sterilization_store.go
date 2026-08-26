@@ -19,14 +19,7 @@ func (s *Store) GetBatch(id string) (*domain.SterilizationBatch, error) {
 	var out *domain.SterilizationBatch
 	s.view(func() {
 		if b, ok := s.batches[id]; ok {
-			cp := *b
-			cp.PackIDs = append([]string(nil), b.PackIDs...)
-			cp.FailReasons = append([]string(nil), b.FailReasons...)
-			if b.CompletedAt != nil {
-				t := *b.CompletedAt
-				cp.CompletedAt = &t
-			}
-			out = &cp
+			out = b.Copy()
 		}
 	})
 	if out == nil {
@@ -35,16 +28,18 @@ func (s *Store) GetBatch(id string) (*domain.SterilizationBatch, error) {
 	return out, nil
 }
 
-// UpdateBatch 在写锁内按 ID 更新批次。
+// UpdateBatch 在写锁内按 ID 更新批次；fn 接收副本，返回错误则回滚。
 func (s *Store) UpdateBatch(id string, fn func(b *domain.SterilizationBatch) error) error {
 	return s.mutate(func() error {
 		b, ok := s.batches[id]
 		if !ok {
 			return domain.ErrNotFound
 		}
-		if err := fn(b); err != nil {
+		cp := b.Copy()
+		if err := fn(cp); err != nil {
 			return err
 		}
+		s.batches[id] = cp
 		return nil
 	})
 }
@@ -59,14 +54,7 @@ func (s *Store) ListBatchesPage(limit, offset int) []*domain.SterilizationBatch 
 	out := make([]*domain.SterilizationBatch, 0)
 	s.view(func() {
 		for _, b := range s.batches {
-			cp := *b
-			cp.PackIDs = append([]string(nil), b.PackIDs...)
-			cp.FailReasons = append([]string(nil), b.FailReasons...)
-			if b.CompletedAt != nil {
-				t := *b.CompletedAt
-				cp.CompletedAt = &t
-			}
-			out = append(out, &cp)
+			out = append(out, b.Copy())
 		}
 	})
 	sort.Slice(out, func(i, j int) bool {

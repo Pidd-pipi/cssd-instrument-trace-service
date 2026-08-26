@@ -53,7 +53,7 @@ func NewPack(in RegisterPackInput) *InstrumentPack {
 		Barcode:     strings.TrimSpace(in.Barcode),
 		Name:        strings.TrimSpace(in.Name),
 		PackType:    in.PackType,
-		Instruments: in.Instruments,
+		Instruments: CopyStrings(in.Instruments),
 		Stage:       StageToCollect,
 		CreatedAt:   now,
 		UpdatedAt:   now,
@@ -120,7 +120,7 @@ func (p *InstrumentPack) Copy() *InstrumentPack {
 		t := *p.ExpiryAt
 		cp.ExpiryAt = &t
 	}
-	cp.Instruments = p.Instruments
+	cp.Instruments = CopyStrings(p.Instruments)
 	return &cp
 }
 

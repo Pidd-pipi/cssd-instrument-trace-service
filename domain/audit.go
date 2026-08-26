@@ -35,7 +35,7 @@ func NewAuditLog(action, operator, targetType, targetID, ip string, detail map[s
 		Operator:   operator,
 		TargetType: targetType,
 		TargetID:   targetID,
-		Detail:     detail,
+		Detail:     CopyStringAnyMap(detail),
 		IP:         ip,
 		CreatedAt:  time.Now(),
 	}

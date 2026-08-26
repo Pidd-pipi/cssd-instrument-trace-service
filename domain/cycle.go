@@ -28,7 +28,7 @@ func NewCycleRecord(pack *InstrumentPack, from, to PackStage, operator, deviceID
 		Operator:  operator,
 		DeviceID:  deviceID,
 		Note:      note,
-		Params:    params,
+		Params:    CopyStringAnyMap(params),
 		CreatedAt: time.Now(),
 	}
 }

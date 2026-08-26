@@ -106,3 +106,16 @@ func (b *SterilizationBatch) Complete(result SterilizeResult, reasons []string, 
 	ts := now
 	b.CompletedAt = &ts
 }
+
+// Copy 返回灭菌批次的深拷贝，slice 与指针均与原对象隔离，
+// 避免调用方在仓储副本上修改时写穿仓储内对象。
+func (b *SterilizationBatch) Copy() *SterilizationBatch {
+	cp := *b
+	cp.PackIDs = append([]string(nil), b.PackIDs...)
+	cp.FailReasons = append([]string(nil), b.FailReasons...)
+	if b.CompletedAt != nil {
+		t := *b.CompletedAt
+		cp.CompletedAt = &t
+	}
+	return &cp
+}

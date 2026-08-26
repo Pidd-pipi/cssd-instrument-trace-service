@@ -25,6 +25,7 @@ func (s *Store) ListAuditsPage(limit, offset int) []*domain.AuditLog {
 	s.view(func() {
 		for _, a := range s.audits {
 			cp := *a
+			cp.Detail = domain.CopyStringAnyMap(a.Detail)
 			out = append(out, &cp)
 		}
 	})

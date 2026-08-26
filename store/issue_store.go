@@ -28,12 +28,7 @@ func (s *Store) GetIssue(id string) (*domain.IssueRecord, error) {
 	var out *domain.IssueRecord
 	s.view(func() {
 		if r, ok := s.issues[id]; ok {
-			cp := *r
-			if r.CollectedAt != nil {
-				t := *r.CollectedAt
-				cp.CollectedAt = &t
-			}
-			out = &cp
+			out = r.Copy()
 		}
 	})
 	if out == nil {
@@ -48,8 +43,7 @@ func (s *Store) GetOpenIssueByPack(packID string) *domain.IssueRecord {
 	s.view(func() {
 		for _, r := range s.issues {
 			if r.PackID == packID && r.IsOpen() {
-				cp := *r
-				out = &cp
+				out = r.Copy()
 				return
 			}
 		}
@@ -68,12 +62,7 @@ func (s *Store) ListIssues(f IssueFilter) []*domain.IssueRecord {
 			if f.PackID != "" && r.PackID != f.PackID {
 				continue
 			}
-			cp := *r
-			if r.CollectedAt != nil {
-				t := *r.CollectedAt
-				cp.CollectedAt = &t
-			}
-			out = append(out, &cp)
+			out = append(out, r.Copy())
 		}
 	})
 	sort.Slice(out, func(i, j int) bool {
@@ -89,16 +78,18 @@ func (s *Store) ListIssues(f IssueFilter) []*domain.IssueRecord {
 	return out
 }
 
-// UpdateIssue 在写锁内按 ID 更新发放记录。
+// UpdateIssue 在写锁内按 ID 更新发放记录；fn 接收副本，返回错误则回滚。
 func (s *Store) UpdateIssue(id string, fn func(r *domain.IssueRecord) error) error {
 	return s.mutate(func() error {
 		r, ok := s.issues[id]
 		if !ok {
 			return domain.ErrNotFound
 		}
-		if err := fn(r); err != nil {
+		cp := r.Copy()
+		if err := fn(cp); err != nil {
 			return err
 		}
+		s.issues[id] = cp
 		return nil
 	})
 }
@@ -109,12 +100,7 @@ func (s *Store) ListOpenIssuesOlderThan(cut time.Time) []*domain.IssueRecord {
 	s.view(func() {
 		for _, r := range s.issues {
 			if r.IsOpen() && r.IssuedAt.Before(cut) {
-				cp := *r
-				if r.CollectedAt != nil {
-					t := *r.CollectedAt
-					cp.CollectedAt = &t
-				}
-				out = append(out, &cp)
+				out = append(out, r.Copy())
 			}
 		}
 	})
